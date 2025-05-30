@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rubik's Cube</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script src="https://unpkg.com/three@0.156.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.156.0/examples/js/controls/OrbitControls.js"></script>
+  <script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(5, 5, 5);
+    const renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(3, 3, 3);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x777777));
+
+    const cubelets = [];
+    const cubeGroup = new THREE.Group();
+    const colors = {
+      x1: 0xff0000, // red
+      x_1: 0xffa500, // orange
+      y1: 0xffff00, // yellow
+      y_1: 0xffffff, // white
+      z1: 0x0000ff, // blue
+      z_1: 0x008000  // green
+    };
+
+    function faceColor(axis, value) {
+      if (value === 1) return colors[axis + '1'];
+      if (value === -1) return colors[axis + '_1'];
+      return 0x000000; // internal face - black
+    }
+
+    for (let x=-1; x<=1; x++) {
+      for (let y=-1; y<=1; y++) {
+        for (let z=-1; z<=1; z++) {
+          const geometry = new THREE.BoxGeometry(0.98,0.98,0.98);
+          const materials = [
+            new THREE.MeshPhongMaterial({color: faceColor('x',  1)}), // right
+            new THREE.MeshPhongMaterial({color: faceColor('x', -1)}), // left
+            new THREE.MeshPhongMaterial({color: faceColor('y',  1)}), // top
+            new THREE.MeshPhongMaterial({color: faceColor('y', -1)}), // bottom
+            new THREE.MeshPhongMaterial({color: faceColor('z',  1)}), // front
+            new THREE.MeshPhongMaterial({color: faceColor('z', -1)})  // back
+          ];
+          const cubelet = new THREE.Mesh(geometry, materials);
+          cubelet.position.set(x, y, z);
+          cubelet.userData.coords = {x, y, z};
+          cubeGroup.add(cubelet);
+          cubelets.push(cubelet);
+        }
+      }
+    }
+    scene.add(cubeGroup);
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let rotating = null;
+
+    window.addEventListener('resize', onWindowResize, false);
+    window.addEventListener('mousedown', onMouseDown, false);
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function axisFromNormal(normal) {
+      if (Math.abs(normal.x) > 0.9) return 'x';
+      if (Math.abs(normal.y) > 0.9) return 'y';
+      return 'z';
+    }
+
+    function rotateLayer(axis, index) {
+      if (rotating) return; // already rotating
+      const group = new THREE.Group();
+      const toRotate = [];
+      cubelets.forEach(c => {
+        if (Math.round(c.position[axis]) === index) {
+          group.add(c);
+          toRotate.push(c);
+        }
+      });
+      scene.add(group);
+      rotating = {group, axis, remaining: Math.PI / 2, speed: Math.PI / 60, children: toRotate};
+    }
+
+    function onMouseDown(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(cubelets);
+      if (intersects.length > 0) {
+        const inter = intersects[0];
+        const axis = axisFromNormal(inter.face.normal);
+        const index = Math.round(inter.object.position[axis]);
+        rotateLayer(axis, index);
+      }
+    }
+
+    const axes = {
+      x: new THREE.Vector3(1, 0, 0),
+      y: new THREE.Vector3(0, 1, 0),
+      z: new THREE.Vector3(0, 0, 1)
+    };
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      if (rotating) {
+        const delta = Math.min(rotating.speed, rotating.remaining);
+        rotating.group.rotateOnAxis(axes[rotating.axis], delta);
+        rotating.remaining -= delta;
+        if (rotating.remaining <= 0) {
+          rotating.children.forEach(c => {
+            c.applyMatrix4(rotating.group.matrix);
+            cubeGroup.add(c);
+          });
+          scene.remove(rotating.group);
+          rotating = null;
+        }
+      }
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
